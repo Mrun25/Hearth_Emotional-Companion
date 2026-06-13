@@ -1,0 +1,52 @@
+# ============================================================
+# lora_config.yaml — LoRA + Training Hyperparameters for Fumii
+#
+# WHY externalise: Keeps train.py clean and makes HPO easy —
+# swap configs without touching training code.
+# ============================================================
+
+model:
+  name: "mistralai/Mistral-7B-Instruct-v0.3"
+  # WHY 4-bit: NF4 + double-quant fits a 7B model inside 16 GB
+  # GPU VRAM (e.g., A100 40 GB with headroom for activations).
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: true
+
+lora:
+  r: 16                        # rank — higher = more params, more expressive
+  lora_alpha: 32               # scaling factor; rule-of-thumb: 2 × r
+  target_modules:              # attention projections only — avoids touching FFN
+    - "q_proj"
+    - "v_proj"
+  lora_dropout: 0.05           # light dropout to prevent adapter overfitting
+  bias: "none"                 # no bias terms in adapters (standard practice)
+  task_type: "CAUSAL_LM"
+
+training:
+  output_dir: "outputs/checkpoints"
+  num_train_epochs: 3
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 4  # effective batch = 4 × 4 = 16
+  learning_rate: 2.0e-4
+  lr_scheduler_type: "cosine"     # WHY cosine: smoother decay than linear for LLM fine-tuning
+  warmup_ratio: 0.03
+  bf16: true                       # bfloat16 is stable on A100; use fp16 on V100
+  tf32: true                       # extra speed on Ampere GPUs
+  logging_dir: "outputs/logs"
+  logging_steps: 10
+  save_steps: 100
+  save_total_limit: 3              # keep only last 3 checkpoints
+  eval_strategy: "steps"
+  eval_steps: 100
+  load_best_model_at_end: true
+  metric_for_best_model: "eval_loss"
+  report_to: "tensorboard"
+  dataloader_num_workers: 4
+  remove_unused_columns: false     # WHY: SFTTrainer needs the raw messages column
+
+sft:
+  max_seq_length: 512              # WHY 512: Fumii responses are short; saves memory
+  packing: false                   # WHY false: packing can mix conversation context
+  dataset_text_field: null         # use formatting_func instead (chat template)
