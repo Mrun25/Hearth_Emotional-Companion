@@ -4,7 +4,20 @@
 # Install: pip install -r requirements.txt
 # ============================================================
 
+# ── Web Server ───────────────────────────────────────────────
+flask==3.0.3
+flask-cors==4.0.1
+groq>=0.9.0
+
+
+
+# ── Config & Utilities ──────────────────────────────────────
+pyyaml==6.0.1
+python-dotenv==1.0.1   # load env vars from .env
+tqdm==4.66.4
+
 # ── Core ML & Training ──────────────────────────────────────
+# (Only needed if running local fine-tuning / inference)
 torch==2.2.2
 transformers==4.40.2
 datasets==2.19.1
@@ -24,14 +37,6 @@ pandas==2.2.2
 numpy==1.26.4
 scikit-learn==1.4.2    # train/val/test split utilities
 
-# ── Config & Utilities ──────────────────────────────────────
-pyyaml==6.0.1
-python-dotenv==1.0.1   # load HF_TOKEN from .env
-tqdm==4.66.4
-huggingface-hub==0.23.0
-
 # ── Logging ─────────────────────────────────────────────────
 tensorboard==2.16.2
-
-# ── Crisis Classifier (DistilBERT) ──────────────────────────
-# Uses same transformers + torch stack above; no extras needed
+huggingface-hub==0.23.0

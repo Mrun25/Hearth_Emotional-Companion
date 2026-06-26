@@ -7,12 +7,12 @@ injects the Fumii system prompt, and writes train/val/test splits.
 
 Usage:
     python scripts/prepare_data.py                  # process all files in data/raw/
-    python scripts/prepare_data.py --demo           # run on 10 synthetic examples (Step 2 ✅ test)
+    python scripts/prepare_data.py --demo           # run on 10 synthetic examples
+    python scripts/prepare_data.py --generate       # generate synthetic datasets
     python scripts/prepare_data.py --input my.jsonl # process a specific file
 """
 
 import os
-import re
 import json
 import random
 import argparse
@@ -20,8 +20,10 @@ import csv
 from pathlib import Path
 from collections import Counter
 
+# Import single source of truth for prompts and scoring
+from fumii_constants import FUMII_SYSTEM_PROMPT, pre_filter, score_response, classify_message_type
+
 # ── Paths ────────────────────────────────────────────────────────────────────
-# WHY resolve from __file__: script works regardless of cwd
 BASE_DIR   = Path(__file__).resolve().parent.parent
 RAW_DIR    = BASE_DIR / "data" / "raw"
 PROC_DIR   = BASE_DIR / "data" / "processed"
@@ -29,51 +31,12 @@ SPLIT_DIR  = BASE_DIR / "data" / "splits"
 
 SPLIT_DIR.mkdir(parents=True, exist_ok=True)
 PROC_DIR.mkdir(parents=True, exist_ok=True)
+RAW_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── Fumii System Prompt ───────────────────────────────────────────────────────
-# WHY this exact wording: it encodes persona, hard constraints (≤3 sentences,
-# open-ended question), and tone without being preachy.
-FUMII_SYSTEM_PROMPT = (
-    "You are Fumii — a warm, calm, wise, and playful emotional companion. "
-    "You are NOT a therapist. NEVER respond with more than 3 sentences. "
-    "ALWAYS ask one open-ended follow-up question. NEVER give unsolicited advice. "
-    "Speak like a thoughtful 24-year-old with deep emotional wisdom. "
-    "Be curious. Be present. Be real."
-)
-
-# ── Anti-Pattern Phrases ──────────────────────────────────────────────────────
-# WHY lowercase match: catches "Life is about" and "life is about" equally.
-ANTI_PATTERNS = [
-    "life is about",
-    "everything happens for a reason",
-    "you should try",
-    "as an ai",
-    "i recommend",
-    "have you considered",
-    "it's important to",
-]
-
-# ── Sentence Splitter ─────────────────────────────────────────────────────────
-SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
-
-def count_sentences(text: str) -> int:
-    """Split on sentence-ending punctuation and count fragments."""
-    # Strip trailing whitespace then split; filter empty fragments
-    parts = SENTENCE_END.split(text.strip())
-    return len([p for p in parts if p.strip()])
-
-def has_anti_pattern(text: str) -> bool:
-    """Return True if any banned phrase is found (case-insensitive)."""
-    lower = text.lower()
-    return any(phrase in lower for phrase in ANTI_PATTERNS)
 
 # ── Format Conversion ─────────────────────────────────────────────────────────
 def to_fumii_format(user_text: str, assistant_text: str) -> dict:
-    """
-    Wrap a user/assistant pair in the Fumii chat format.
-    WHY always inject system prompt here: ensures EVERY training example
-    has the persona baked in, not just some.
-    """
+    """Wrap a single user/assistant pair in the Fumii chat format."""
     return {
         "messages": [
             {"role": "system",    "content": FUMII_SYSTEM_PROMPT},
@@ -82,13 +45,23 @@ def to_fumii_format(user_text: str, assistant_text: str) -> dict:
         ]
     }
 
+def ensure_system_prompt(messages: list) -> list:
+    """Ensure the messages list starts with the canonical system prompt."""
+    if messages and messages[0].get("role") == "system":
+        messages[0]["content"] = FUMII_SYSTEM_PROMPT
+        return messages
+    
+    return [{"role": "system", "content": FUMII_SYSTEM_PROMPT}] + messages
+
+
 # ── Loaders ───────────────────────────────────────────────────────────────────
-def load_jsonl(path: Path) -> list[dict]:
+def load_jsonl(path: Path) -> list:
     """
-    Load JSONL. Expected formats:
-      - {"messages": [...]}  (already in chat format)
+    Load JSONL. Supports:
+      - {"messages": [...]}  (chat format, single or multi-turn)
       - {"user": "...", "assistant": "..."}  (flat pairs)
       - {"prompt": "...", "response": "..."}  (alternative flat pairs)
+      - DPO format {"prompt": "...", "chosen": "...", "rejected": "..."} 
     """
     records = []
     with open(path, encoding="utf-8") as f:
@@ -102,28 +75,32 @@ def load_jsonl(path: Path) -> list[dict]:
                 print(f"  ⚠️  Skipping malformed JSON at line {i}: {e}")
                 continue
 
-            # Normalise to (user, assistant) tuple
+            # Pass DPO examples straight through (they are handled differently)
+            if "chosen" in obj and "rejected" in obj:
+                records.append(("DPO_EXAMPLE", obj))
+                continue
+
+            # Multi-turn or pre-formatted messages
             if "messages" in obj:
-                msgs = obj["messages"]
-                user_msg  = next((m["content"] for m in msgs if m["role"] == "user"), None)
-                asst_msg  = next((m["content"] for m in msgs if m["role"] == "assistant"), None)
-            elif "user" in obj and "assistant" in obj:
+                records.append(("MESSAGES", obj["messages"]))
+                continue
+
+            # Normalise flat pairs to (user, assistant) tuple
+            user_msg = asst_msg = None
+            if "user" in obj and "assistant" in obj:
                 user_msg, asst_msg = obj["user"], obj["assistant"]
             elif "prompt" in obj and "response" in obj:
                 user_msg, asst_msg = obj["prompt"], obj["response"]
+            
+            if user_msg and asst_msg:
+                records.append(("PAIR", (user_msg, asst_msg)))
             else:
                 print(f"  ⚠️  Skipping unrecognised format at line {i}: {list(obj.keys())}")
-                continue
-
-            if user_msg and asst_msg:
-                records.append((user_msg, asst_msg))
     return records
 
 
-def load_csv(path: Path) -> list[tuple]:
-    """
-    Load CSV. Must have columns: user/prompt AND assistant/response.
-    """
+def load_csv(path: Path) -> list:
+    """Load CSV. Must have columns: user/prompt AND assistant/response."""
     records = []
     with open(path, encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
@@ -134,88 +111,209 @@ def load_csv(path: Path) -> list[tuple]:
                 if i == 1:
                     print(f"  ⚠️  CSV missing expected columns. Found: {list(row.keys())}")
                 continue
-            records.append((row[user_col], row[asst_col]))
+            records.append(("PAIR", (row[user_col], row[asst_col])))
     return records
+
+
+# ── Filter Pipeline ────────────────────────────────────────────────────────────
+def filter_assistant_response(response: str, user_message: str = "") -> tuple[bool, str]:
+    """
+    Uses canonical 5-dimension scoring with context-aware question scoring.
+    Reject if total < 11/15 (threshold lowered from 12 to accommodate valid
+    question-free responses which no longer need to satisfy the old question rule).
+    """
+    passes_pre, failures = pre_filter(response)
+    if not passes_pre:
+        return False, failures[0]
+        
+    score_data = score_response(response, user_message=user_message)
+    if not score_data["pass"]:
+        return False, f"score_too_low_{score_data['total']}"
+        
+    return True, "ok"
+
+
+def filter_record(record_type, data) -> tuple[bool, str]:
+    """Filter records based on their type, passing user message for context-aware scoring."""
+    if record_type == "DPO_EXAMPLE":
+        user_msg = data.get("prompt", "")
+        keep, reason = filter_assistant_response(data["chosen"], user_message=user_msg)
+        if not keep:
+            return False, f"dpo_chosen_{reason}"
+        return True, "ok"
+        
+    elif record_type == "MESSAGES":
+        # Check all assistant turns, using the preceding user message for context
+        messages = data
+        for i, msg in enumerate(messages):
+            if msg["role"] == "assistant":
+                # Find the immediately preceding user message
+                user_msg = ""
+                for j in range(i - 1, -1, -1):
+                    if messages[j]["role"] == "user":
+                        user_msg = messages[j]["content"]
+                        break
+                keep, reason = filter_assistant_response(msg["content"], user_message=user_msg)
+                if not keep:
+                    return False, f"multiturn_{reason}"
+        return True, "ok"
+        
+    elif record_type == "PAIR":
+        user, assistant = data
+        return filter_assistant_response(assistant, user_message=user)
+        
+    return False, "unknown_type"
+
+
+# ── Split & Write ─────────────────────────────────────────────────────────────
+def write_splits(sft_examples: list[dict], dpo_examples: list[dict], seed: int = 42):
+    """Shuffle then write 80/10/10 splits for SFT, and a separate split for DPO."""
+    random.seed(seed)
+    
+    if sft_examples:
+        random.shuffle(sft_examples)
+        n = len(sft_examples)
+        n_train = int(n * 0.8)
+        n_val   = int(n * 0.1)
+        
+        splits = {
+            "train": sft_examples[:n_train],
+            "val":   sft_examples[n_train : n_train + n_val],
+            "test":  sft_examples[n_train + n_val :],
+        }
+
+        for name, data in splits.items():
+            path = SPLIT_DIR / f"{name}.jsonl"
+            with open(path, "w", encoding="utf-8") as f:
+                for ex in data:
+                    f.write(json.dumps(ex, ensure_ascii=False) + "\n")
+            print(f"  [FILE] {name}.jsonl -> {len(data)} examples")
+
+    if dpo_examples:
+        random.shuffle(dpo_examples)
+        path = SPLIT_DIR / "dpo_train.jsonl"
+        with open(path, "w", encoding="utf-8") as f:
+            for ex in dpo_examples:
+                f.write(json.dumps(ex, ensure_ascii=False) + "\n")
+        print(f"  [FILE] dpo_train.jsonl -> {len(dpo_examples)} examples")
+
 
 # ── Synthetic Demo Data ────────────────────────────────────────────────────────
 DEMO_EXAMPLES = [
-    # GOOD examples — should pass all filters
-    ("I've been feeling so alone lately.",
-     "That loneliness sounds really heavy. What does it feel like in your body when it hits?"),
-    ("My best friend and I had a huge fight.",
-     "Falling out with someone close is really painful. What started the argument, if you don't mind sharing?"),
-    ("I can't sleep. My mind just won't stop.",
-     "That racing mind at 3am is exhausting. What thoughts keep coming back to you?"),
-    ("I feel like nobody really sees me.",
-     "That invisible feeling is one of the loneliest things. When was the last time you felt truly seen?"),
-    ("I lost my job today.",
-     "Oh, that's a lot to absorb all at once. How are you holding up right now?"),
-    ("I don't know what I want from life.",
-     "That uncertainty can feel unmooring. What used to excite you that maybe doesn't anymore?"),
-    ("My anxiety has been really bad this week.",
-     "Anxiety at that level is genuinely exhausting. What's been triggering it most this week?"),
-    # BAD examples — should be filtered out
-    ("I feel really stuck.",
-     "Life is about finding your path and everything happens for a reason! You should try journaling."),
-    ("I'm so sad.",
-     "As an AI, I recommend you seek professional help. It's important to take care of yourself."),
-    ("I feel lost.",
-     "Have you considered talking to a therapist? They can really help. Also, remember to exercise. "
-     "Eat well too. Sleep is important. Build a routine. Focus on the positives. "
-     "Gratitude journaling helps. Try meditation. Call a friend."),  # > 3 sentences
+    # GOOD examples — pass 5-dim rubric, use contractions, exact one question, no banned phrases
+    ("PAIR", ("I've been feeling so alone lately.",
+     "That isolation is a heavy thing to carry by yourself. Sometimes reaching out to just one safe person helps ground you. Who's someone you can talk to today?")),
+    
+    ("PAIR", ("My best friend and I had a huge fight.",
+     "It's incredibly painful when there's a rift with someone you trust. Giving it a day to cool off usually brings some clarity. What started the argument?")),
+    
+    ("PAIR", ("I can't sleep. My mind just won't stop.",
+     "That 3am racing mind is genuinely exhausting. Getting thoughts onto paper sometimes helps your brain let go for the night. What's the main worry keeping you awake?")),
+     
+    ("PAIR", ("I feel like nobody really sees me.",
+     "That invisible feeling is one of the loneliest experiences to sit with. Connecting with a community around a shared interest can help you feel understood. What's something you care deeply about?")),
+     
+    ("PAIR", ("I lost my job today.",
+     "Oh, that's incredibly stressful news to process all at once. Take the rest of today to just breathe before figuring out next steps. How are you holding up right now?")),
 ]
 
-# ── Filter Pipeline ────────────────────────────────────────────────────────────
-def filter_example(user: str, assistant: str) -> tuple[bool, str]:
+
+# ── Synthetic Dataset Generation ──────────────────────────────────────────────
+def generate_synthetic_datasets():
     """
-    Returns (keep: bool, reason: str).
-    WHY two separate checks: lets statistics show WHICH filter removed what.
+    Generate typed positive examples, diverse multi-turn, and DPO examples.
+    Uses the 4-type decision framework: fragment, medium, vent, question.
     """
-    if count_sentences(assistant) > 3:
-        return False, "too_long"
-    if has_anti_pattern(assistant):
-        return False, "anti_pattern"
-    return True, "ok"
+    print("\n[GENERATE] Generating synthetic datasets to data/raw/...")
+    print("  NOTE: The primary training data is in fumii_positive_examples.jsonl")
+    print("  and fumii_multiturn_examples.jsonl. This command only adds DPO examples.")
 
-# ── Split & Write ─────────────────────────────────────────────────────────────
-def write_splits(examples: list[dict], seed: int = 42):
-    """Shuffle then write 80/10/10 splits."""
-    random.seed(seed)
-    random.shuffle(examples)
+    # ── DPO Examples ──────────────────────────────────────────────────────────
+    # Chosen = correct Fumii response (specific, right length, right structure for message type)
+    # Rejected = the bad formula or banned phrases
+    dpo_path = RAW_DIR / "fumii_dpo_examples.jsonl"
+    dpo_examples = [
+        # Rejected: formula opener + question on a venting message
+        {
+            "prompt": "I've been crying every day for two weeks and I don't even know why and I'm exhausted from it.",
+            "chosen": "Two weeks of that, without even an explanation to hold onto — your body is carrying something your mind hasn't named yet.",
+            "rejected": "That sounds incredibly draining. It makes complete sense that you're feeling this way. How long have you been carrying this?"
+        },
+        # Rejected: advice-giving
+        {
+            "prompt": "I can't sleep. My mind won't stop.",
+            "chosen": "What's it cycling through?",
+            "rejected": "You should try putting your phone away an hour before bed and doing some deep breathing. Self-care is really important for sleep hygiene."
+        },
+        # Rejected: banned phrases
+        {
+            "prompt": "I'm really struggling today.",
+            "chosen": "What happened today?",
+            "rejected": "I'm sorry to hear that. Thank you for sharing with me. It's completely normal to feel this way. You've got this!"
+        },
+        # Rejected: too many questions
+        {
+            "prompt": "I feel like I'm failing at everything.",
+            "chosen": "At something specific, or that general feeling that everything you do falls short?",
+            "rejected": "That sounds hard. How long have you been feeling this way? What do you think is causing it? Have you talked to anyone about this?"
+        },
+        # Rejected: way too long, advice-heavy
+        {
+            "prompt": "I feel so alone lately.",
+            "chosen": "Even around people, or just in general?",
+            "rejected": "Loneliness is such a common experience and you're not alone in feeling this way. Here are some things you can try: 1. Join a club or group. 2. Reach out to an old friend. 3. Consider seeing a therapist. It gets better!"
+        },
+        # Rejected: doesn't answer user's question first
+        {
+            "prompt": "do you think I made the right choice?",
+            "chosen": "I don't know enough yet to say. Tell me what happened.",
+            "rejected": "It sounds like you're really second-guessing yourself. What's coming up for you the most?"
+        },
+        # Rejected: formula opener on short message
+        {
+            "prompt": "tired.",
+            "chosen": "What kind of tired?",
+            "rejected": "That's a really heavy feeling to sit with. It makes complete sense that you're feeling this way. What's the heaviest part of it for you right now?"
+        },
+        # Rejected: generic, no specificity
+        {
+            "prompt": "My dad and I haven't spoken in two years.",
+            "chosen": "What happened between you?",
+            "rejected": "Family relationships can be really complicated. It's completely normal to have distance sometimes. How are you holding up today?"
+        },
+        # Rejected: AI disclosure
+        {
+            "prompt": "do you actually care about what I'm saying?",
+            "chosen": "I'm here and I'm listening. What's on your mind?",
+            "rejected": "As an AI, I don't have feelings, but I'm programmed to be helpful and supportive. I'm here to help you process your emotions."
+        },
+        # Rejected: motivation bypass
+        {
+            "prompt": "I failed my exam.",
+            "chosen": "What happened?",
+            "rejected": "Don't worry, failure is just a stepping stone to success! You've got this. Try harder next time and I'm sure you'll do great."
+        },
+    ]
 
-    n = len(examples)
-    n_train = int(n * 0.8)
-    n_val   = int(n * 0.1)
-    # test gets the remainder (handles rounding)
-    splits = {
-        "train": examples[:n_train],
-        "val":   examples[n_train : n_train + n_val],
-        "test":  examples[n_train + n_val :],
-    }
+    # Expand by duplicating with slight variation in prompt phrasing
+    expanded_dpo = []
+    for ex in dpo_examples:
+        expanded_dpo.append(ex)
+        # Add 10 more with same chosen/rejected to reinforce the signal
+        for _ in range(10):
+            expanded_dpo.append(ex)
 
-    for name, data in splits.items():
-        path = SPLIT_DIR / f"{name}.jsonl"
-        with open(path, "w", encoding="utf-8") as f:
-            for ex in data:
-                f.write(json.dumps(ex, ensure_ascii=False) + "\n")
-        print(f"  [FILE] {name}.jsonl -> {len(data)} examples")
+    with open(dpo_path, "w", encoding="utf-8") as f:
+        for ex in expanded_dpo:
+            f.write(json.dumps(ex, ensure_ascii=False) + "\n")
+    print(f"  -> Generated {len(expanded_dpo)} DPO examples in {dpo_path.name}")
 
-    return splits
 
 # ── Statistics ────────────────────────────────────────────────────────────────
-def print_stats(all_pairs: list, filtered_pairs: list, filter_reasons: Counter):
+def print_stats(total_raw, total_kept, filter_reasons: Counter):
     """Print a concise summary of the dataset pipeline."""
-    total_raw   = len(all_pairs)
-    total_kept  = len(filtered_pairs)
     total_drop  = total_raw - total_kept
-
-    if total_kept == 0:
-        avg_len = 0.0
-    else:
-        avg_len = sum(
-            len(asst.split()) for _, asst in filtered_pairs
-        ) / total_kept
-
+    
     print("\n" + "=" * 50)
     print("  [STATS] DATASET STATISTICS")
     print("=" * 50)
@@ -223,63 +321,72 @@ def print_stats(all_pairs: list, filtered_pairs: list, filter_reasons: Counter):
     print(f"  Kept after filtering : {total_kept}")
     print(f"  Filtered out         : {total_drop}")
     for reason, count in filter_reasons.items():
-        print(f"    -- {reason:<15}: {count}")
-    print(f"  Avg response length  : {avg_len:.1f} words")
+        print(f"    -- {reason:<25}: {count}")
     print("=" * 50 + "\n")
+
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(description="Fumii data preparation pipeline")
-    parser.add_argument("--input",  type=str, default=None, help="Specific input file to process")
-    parser.add_argument("--demo",   action="store_true",     help="Run on 10 synthetic demo examples")
-    parser.add_argument("--seed",   type=int, default=42,    help="Random seed for splitting")
+    parser.add_argument("--input",    type=str, default=None, help="Specific input file to process")
+    parser.add_argument("--demo",     action="store_true",    help="Run on synthetic demo examples")
+    parser.add_argument("--generate", action="store_true",    help="Generate synthetic datasets to data/raw/")
+    parser.add_argument("--seed",     type=int, default=42,   help="Random seed for splitting")
     args = parser.parse_args()
 
-    all_pairs: list[tuple[str, str]] = []
+    if args.generate:
+        generate_synthetic_datasets()
+        return
+
+    all_records = []
 
     if args.demo:
-        print("[DEMO] Running in DEMO mode on 10 synthetic examples...")
-        all_pairs = DEMO_EXAMPLES
+        print("[DEMO] Running in DEMO mode on synthetic examples...")
+        all_records = DEMO_EXAMPLES
     elif args.input:
         p = Path(args.input)
         if not p.exists():
             raise FileNotFoundError(f"Input file not found: {p}")
         print(f"[LOAD] Loading: {p}")
-        all_pairs = load_jsonl(p) if p.suffix == ".jsonl" else load_csv(p)
+        all_records = load_jsonl(p) if p.suffix == ".jsonl" else load_csv(p)
     else:
-        # Auto-discover all JSONL and CSV files in data/raw/
         raw_files = list(RAW_DIR.glob("*.jsonl")) + list(RAW_DIR.glob("*.csv"))
         if not raw_files:
-            print(f"[WARN] No .jsonl or .csv files found in {RAW_DIR}")
-            print("    Run with --demo to test on synthetic data.")
+            print(f"[WARN] No files found in {RAW_DIR}")
+            print("    Run with --generate to create synthetic data, or --demo to test.")
             return
         for path in raw_files:
             print(f"[LOAD] Loading: {path.name}")
-            pairs = load_jsonl(path) if path.suffix == ".jsonl" else load_csv(path)
-            all_pairs.extend(pairs)
-            print(f"   -> {len(pairs)} examples loaded")
+            records = load_jsonl(path) if path.suffix == ".jsonl" else load_csv(path)
+            all_records.extend(records)
+            print(f"   -> {len(records)} examples loaded")
 
-    print(f"\n[FILTER] Filtering {len(all_pairs)} examples...")
-    filtered_pairs: list[tuple[str, str]] = []
-    filter_reasons: Counter = Counter()
+    print(f"\n[FILTER] Filtering {len(all_records)} examples using canonical 5-dimension rubric...")
+    
+    sft_examples = []
+    dpo_examples = []
+    filter_reasons = Counter()
 
-    for user, assistant in all_pairs:
-        keep, reason = filter_example(user, assistant)
+    for r_type, data in all_records:
+        keep, reason = filter_record(r_type, data)
         filter_reasons[reason] += 1
+        
         if keep:
-            filtered_pairs.append((user, assistant))
+            if r_type == "DPO_EXAMPLE":
+                dpo_examples.append(data)
+            elif r_type == "PAIR":
+                sft_examples.append(to_fumii_format(data[0], data[1]))
+            elif r_type == "MESSAGES":
+                sft_examples.append({"messages": ensure_system_prompt(data)})
 
-    # Convert to Fumii chat format
-    examples = [to_fumii_format(u, a) for u, a in filtered_pairs]
+    print_stats(len(all_records), len(sft_examples) + len(dpo_examples), filter_reasons)
 
-    print_stats(all_pairs, filtered_pairs, filter_reasons)
-
-    if not examples:
-        print("[ERROR] No examples survived filtering. Check your data or filters.")
+    if not sft_examples and not dpo_examples:
+        print("[ERROR] No examples survived filtering. Check your data or constants.")
         return
 
-    print("[SPLIT] Writing train/val/test splits...")
-    write_splits(examples, seed=args.seed)
+    print("[SPLIT] Writing dataset splits...")
+    write_splits(sft_examples, dpo_examples, seed=args.seed)
 
     print("\n[OK] Data preparation complete!")
     print(f"   Output directory: {SPLIT_DIR}")

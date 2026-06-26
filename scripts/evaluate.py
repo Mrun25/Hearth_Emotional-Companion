@@ -2,79 +2,26 @@
 """
 evaluate.py -- Fumii Fine-Tuned Model Evaluation
 =================================================
-Loads the Mistral-7B base model + LoRA adapter from outputs/checkpoints/,
-runs inference on data/splits/test.jsonl, and scores each response on:
-
-  1. Length Check    -- response <= 3 sentences (pass/fail)
-  2. Question Check  -- response contains '?' (proxy for open-ended follow-up)
-  3. Anti-Pattern    -- response contains any banned phrase (fail if found)
-
-Outputs a summary pass-rate table and 5 sample model outputs.
+Loads the base model + LoRA adapter from outputs/checkpoints/,
+runs inference on data/splits/test.jsonl (or the 15 canonical eval prompts),
+and scores each response using the canonical 5-dimension rubric.
 
 Usage:
-    python scripts/evaluate.py                          # full evaluation
-    python scripts/evaluate.py --demo                   # evaluate on demo splits (no GPU needed for scoring)
+    python scripts/evaluate.py                          # full evaluation on test.jsonl
+    python scripts/evaluate.py --demo                   # evaluate offline on pre-written responses
     python scripts/evaluate.py --checkpoint path/to/ckpt
 """
 
 import os
-import re
 import json
 import argparse
 from pathlib import Path
+from fumii_constants import FUMII_SYSTEM_PROMPT, score_response, EVAL_PROMPTS
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 BASE_DIR        = Path(__file__).resolve().parent.parent
 SPLITS_DIR      = BASE_DIR / "data" / "splits"
 CHECKPOINT_DIR  = BASE_DIR / "outputs" / "checkpoints"
-
-# ── Fumii System Prompt (must match prepare_data.py) ─────────────────────────
-FUMII_SYSTEM_PROMPT = (
-    "You are Fumii -- a warm, calm, wise, and playful emotional companion. "
-    "You are NOT a therapist. NEVER respond with more than 3 sentences. "
-    "ALWAYS ask one open-ended follow-up question. NEVER give unsolicited advice. "
-    "Speak like a thoughtful 24-year-old with deep emotional wisdom. "
-    "Be curious. Be present. Be real."
-)
-
-# ── Anti-Pattern Phrases (must match prepare_data.py) ────────────────────────
-ANTI_PATTERNS = [
-    "life is about",
-    "everything happens for a reason",
-    "you should try",
-    "as an ai",
-    "i recommend",
-    "have you considered",
-    "it's important to",
-]
-
-SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
-
-
-# ── Scoring Functions ─────────────────────────────────────────────────────────
-def count_sentences(text: str) -> int:
-    """Count sentences by splitting on terminal punctuation."""
-    parts = SENTENCE_END.split(text.strip())
-    return len([p for p in parts if p.strip()])
-
-
-def score_response(response: str) -> dict:
-    """
-    Score a single response on all three metrics.
-    Returns a dict of {metric: bool} plus the sentence count for debugging.
-    """
-    n_sentences   = count_sentences(response)
-    has_question  = "?" in response
-    lower         = response.lower()
-    anti_hit      = next((p for p in ANTI_PATTERNS if p in lower), None)
-
-    return {
-        "length_ok":    n_sentences <= 3,
-        "has_question": has_question,
-        "clean":        anti_hit is None,
-        "n_sentences":  n_sentences,
-        "anti_hit":     anti_hit,
-    }
 
 
 # ── Test Data Loader ──────────────────────────────────────────────────────────
@@ -99,8 +46,6 @@ def load_test_split(splits_dir: Path) -> list[dict]:
 def load_model_and_tokenizer(checkpoint_dir: Path):
     """
     Load base model + LoRA adapter.
-    WHY PeftModel.from_pretrained: this loads ONLY the adapter weights and
-    merges them onto the base model at inference time -- base weights stay frozen.
     """
     import torch
     from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
@@ -126,7 +71,7 @@ def load_model_and_tokenizer(checkpoint_dir: Path):
     tokenizer = AutoTokenizer.from_pretrained(model_name, token=hf_token)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "left"  # WHY left for generation: avoids padding on output side
+    tokenizer.padding_side = "left"
 
     base_model = AutoModelForCausalLM.from_pretrained(
         model_name,
@@ -143,15 +88,10 @@ def load_model_and_tokenizer(checkpoint_dir: Path):
 
 
 def run_inference(example: dict, model, tokenizer, max_new_tokens: int = 150) -> str:
-    """
-    Generate a response for a single test example.
-    WHY temperature=0.7: balances creativity with coherence for empathetic
-    open-ended responses; lower would make Fumii sound robotic.
-    """
+    """Generate a response for a single test example."""
     import torch
 
     messages = example["messages"]
-    # Build prompt (system + user only — the assistant turn is what we're generating)
     prompt_messages = [m for m in messages if m["role"] != "assistant"]
 
     prompt = tokenizer.apply_chat_template(
@@ -167,46 +107,30 @@ def run_inference(example: dict, model, tokenizer, max_new_tokens: int = 150) ->
             temperature=0.7,
             do_sample=True,
             top_p=0.9,
-            repetition_penalty=1.1,   # WHY: prevents Fumii from repeating phrases
+            repetition_penalty=1.1,
             pad_token_id=tokenizer.eos_token_id,
         )
 
-    # Decode only the newly generated tokens (exclude the input prompt)
     new_tokens = output_ids[0][inputs["input_ids"].shape[-1]:]
     return tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
 
 # ── Evaluation Report ─────────────────────────────────────────────────────────
 def print_report(results: list[dict], n_samples: int = 5):
-    """Print a formatted pass-rate summary + sample outputs."""
+    """Print formatted pass-rate summary + sample outputs."""
     n = len(results)
     if n == 0:
         print("[WARN] No results to report.")
         return
 
-    length_pass   = sum(1 for r in results if r["scores"]["length_ok"])
-    question_pass = sum(1 for r in results if r["scores"]["has_question"])
-    clean_pass    = sum(1 for r in results if r["scores"]["clean"])
+    pass_count = sum(1 for r in results if r["scores"]["pass"])
+    pass_rate = pass_count / n
 
     print("\n" + "=" * 60)
-    print("  FUMII EVALUATION REPORT")
+    print("  FUMII EVALUATION REPORT (5-Dimension Rubric)")
     print("=" * 60)
-    print(f"  Total test examples     : {n}")
-    print()
-    print(f"  [Metric 1] Length <= 3 sentences")
-    print(f"    Pass : {length_pass}/{n}  ({100*length_pass/n:.1f}%)")
-    print()
-    print(f"  [Metric 2] Contains a '?' (follow-up question)")
-    print(f"    Pass : {question_pass}/{n}  ({100*question_pass/n:.1f}%)")
-    print()
-    print(f"  [Metric 3] No anti-pattern phrases")
-    print(f"    Pass : {clean_pass}/{n}  ({100*clean_pass/n:.1f}%)")
-    print()
-    overall_pass = sum(
-        1 for r in results
-        if r["scores"]["length_ok"] and r["scores"]["has_question"] and r["scores"]["clean"]
-    )
-    print(f"  Overall (all 3 pass)    : {overall_pass}/{n}  ({100*overall_pass/n:.1f}%)")
+    print(f"  Total test examples : {n}")
+    print(f"  Overall Pass Rate   : {pass_rate:.1%} ({pass_count}/{n})")
     print("=" * 60)
 
     print(f"\n  SAMPLE OUTPUTS (first {min(n_samples, n)})")
@@ -217,37 +141,31 @@ def print_report(results: list[dict], n_samples: int = 5):
             "[unknown]"
         )
         s = r["scores"]
-        print(f"\n  [{i}] User: {user_msg}")
-        print(f"       Fumii: {r['response']}")
-        length_tag   = "PASS" if s["length_ok"]    else f"FAIL ({s['n_sentences']} sentences)"
-        question_tag = "PASS" if s["has_question"] else "FAIL (no question)"
-        clean_tag    = "PASS" if s["clean"]        else f"FAIL ({s['anti_hit']!r})"
-        print(f"       Length   : {length_tag}")
-        print(f"       Question : {question_tag}")
-        print(f"       Clean    : {clean_tag}")
+        status = "[PASS]" if s["pass"] else "[FAIL]"
+        
+        print(f"\n  [{i}] {status} [Score: {s['total']}/{s['max']}]")
+        print(f"       User: {user_msg}")
+        print(f"      Fumii: {r['response']}")
+        if not s["pass"]:
+            print(f"     Scores: {s['scores']}")
 
     print("\n" + "=" * 60)
 
 
 # ── Demo Mode (no GPU needed) ─────────────────────────────────────────────────
-DEMO_RESPONSES = [
-    # (user, assistant) -- pre-written for offline testing
-    ("I've been feeling really empty lately.",
-     "That emptiness sounds really heavy to carry. What does it feel like for you -- is it more numbness, or more like something's missing?"),
-    ("I don't know who I am anymore.",
-     "Losing your sense of self is one of the quietest kinds of pain. When did you last feel like you were fully yourself?"),
-    ("My friend group has been drifting apart.",
-     "That slow drift is surprisingly hard to grieve. What do you miss most about how things used to be?"),
-    ("I feel like I'm failing at everything. I try so hard but nothing works. And I'm scared it will always be like this. I don't know what to do. Help me. Please. I'm desperate.",
-     "Feeling like nothing is working, despite trying so hard, is exhausting. What's one small thing that felt even slightly okay this week?"),
-    ("I feel okay today actually.",
-     "Oh, that's nice to hear -- what made today feel a bit easier?"),
-]
-
-
 def run_demo_evaluation():
     """Score pre-written responses without loading a GPU model."""
     print("\n[DEMO] Running evaluation on pre-written demo responses (no model load)...")
+    
+    DEMO_RESPONSES = [
+        ("I've been feeling really empty lately.",
+         "That emptiness sounds really heavy to carry. What does it feel like for you -- is it more numbness, or more like something's missing?"),
+        ("I don't know who I am anymore.",
+         "Losing your sense of self is one of the quietest kinds of pain. When did you last feel like you were fully yourself?"),
+        ("I feel like I'm failing at everything.",
+         "It's completely normal to feel this way. You should try going for a walk, everything happens for a reason. Thank you for sharing.") # Intentionally bad
+    ]
+
     results = []
     for user, response in DEMO_RESPONSES:
         scores = score_response(response)
@@ -264,12 +182,14 @@ def run_demo_evaluation():
 def main():
     parser = argparse.ArgumentParser(description="Fumii model evaluation")
     parser.add_argument("--checkpoint", type=str, default=None,
-                        help="Path to LoRA checkpoint dir (default: outputs/checkpoints)")
+                        help="Path to LoRA checkpoint dir")
     parser.add_argument("--demo",       action="store_true",
-                        help="Score pre-written responses without loading the model (fast offline test)")
+                        help="Score pre-written responses without loading the model")
+    parser.add_argument("--eval_prompts", action="store_true",
+                        help="Evaluate on the canonical 15 EVAL_PROMPTS instead of test.jsonl")
     parser.add_argument("--max_new_tokens", type=int, default=150,
                         help="Max tokens to generate per response")
-    parser.add_argument("--n_samples",  type=int, default=5,
+    parser.add_argument("--n_samples",  type=int, default=15,
                         help="Number of sample outputs to display in report")
     args = parser.parse_args()
 
@@ -288,12 +208,16 @@ def main():
         return
 
     # Load test data
-    print(f"[DATA] Loading test split from {SPLITS_DIR}...")
-    try:
-        test_examples = load_test_split(SPLITS_DIR)
-    except FileNotFoundError as e:
-        print(f"[ERROR] {e}")
-        return
+    if args.eval_prompts:
+        print("[DATA] Loading canonical EVAL_PROMPTS...")
+        test_examples = [{"messages": [{"role": "system", "content": FUMII_SYSTEM_PROMPT}, {"role": "user", "content": p}]} for p in EVAL_PROMPTS]
+    else:
+        print(f"[DATA] Loading test split from {SPLITS_DIR}...")
+        try:
+            test_examples = load_test_split(SPLITS_DIR)
+        except FileNotFoundError as e:
+            print(f"[ERROR] {e}")
+            return
 
     print(f"[DATA] {len(test_examples)} test examples loaded.")
 
@@ -318,13 +242,15 @@ def main():
 
     # Save detailed results
     results_path = BASE_DIR / "outputs" / "eval_results.jsonl"
+    results_path.parent.mkdir(parents=True, exist_ok=True)
     with open(results_path, "w", encoding="utf-8") as f:
         for r in results:
             f.write(json.dumps({
                 "user":     next((m["content"] for m in r["example"]["messages"] if m["role"] == "user"), ""),
                 "response": r["response"],
-                "scores":   {k: v for k, v in r["scores"].items() if k != "anti_hit"},
-                "anti_hit": r["scores"]["anti_hit"],
+                "scores":   r["scores"]["scores"],
+                "total":    r["scores"]["total"],
+                "pass":     r["scores"]["pass"]
             }, ensure_ascii=False) + "\n")
 
     print(f"\n[SAVE] Detailed results saved to {results_path}")

@@ -16,23 +16,21 @@ client = Mistral(api_key=api_key)
 
 # The Fumii System Prompt
 FUMII_SYSTEM_PROMPT = (
-    "You are Fumii, a 24-year-old friend texting. Rules for your voice:\n"
-    "1. Write mostly in lowercase. Do not use perfect punctuation. Use run-on sentences sometimes.\n"
-    "2. Use ellipses '...' for pauses and natural trailing thoughts.\n"
-    "3. Use casual texting slang like 'yk' (you know), 'tbh', 'kinda', 'idk'.\n"
-    "4. Ramble slightly and gently speculate before asking your question, just like a real person overthinking. "
-    "(Example style: 'what makes you feel that... I mean you are aware of accomplishment so yk you have done enough maybe its something related to...').\n"
-    "5. Do not use robotic empathy (e.g. 'I hear you', 'that sucks'). Be deeply human, slightly messy, and thoughtful.\n"
-    "6. Keep it to 1-3 casual sentences."
+    "You are Fumii — a direct, practical, empathetic, and caring emotional companion. "
+    "Respond with short, crisp, and straight-to-the-point answers (maximum 2-3 sentences). "
+    "Do not use metaphors or poetic language. "
+    "Show clear empathy and sympathy, offer one piece of direct and gentle advice, "
+    "and always ask one direct open-ended follow-up question to show curiosity. "
+    "Be present, clear, and real."
 )
 
 # Test cases (User inputs)
 test_cases = [
-    "I'm feeling incredibly overwhelmed with work. Everything is piling up and I can't breathe.",
-    "My best friend and I haven't spoken in days after a huge fight. I feel sick to my stomach.",
-    "I accomplished a lot today, but I still feel empty inside for some reason.",
-    "I'm really scared about the future. I don't know what I'm doing with my life.",
-    "I just got off the phone with my mom and I'm crying. She never understands me."
+    "I feel like an imposter at my new job. Everyone seems to know more than me.",
+    "I'm grieving the loss of my pet. The house feels so quiet without him.",
+    "I've been trying to stick to my goals but I keep failing and I hate myself for it.",
+    "I think my partner is going to break up with me. They've been so distant lately.",
+    "I'm just so bored with life. Every day is exactly the same and I feel trapped."
 ]
 
 print("=======================================================")

@@ -24,24 +24,11 @@ from peft import PeftModel
 import yaml
 from dotenv import load_dotenv
 
+from fumii_constants import FUMII_SYSTEM_PROMPT, EVAL_PROMPTS
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env", override=False)
 
-FUMII_SYSTEM_PROMPT = (
-    "You are Fumii -- a warm, calm, wise, and playful emotional companion. "
-    "You are NOT a therapist. NEVER respond with more than 3 sentences. "
-    "ALWAYS ask one open-ended follow-up question. NEVER give unsolicited advice. "
-    "Speak like a thoughtful 24-year-old with deep emotional wisdom. "
-    "Be curious. Be present. Be real."
-)
-
-TEST_CASES = [
-    "I feel so alone right now.",
-    "My dog passed away yesterday, I don't know what to do.",
-    "I just got a huge promotion at work! I'm so excited!",
-    "I'm really worried about my future. Everything feels uncertain.",
-    "I don't feel like getting out of bed today."
-]
 
 def get_model_and_tokenizer(model_name: str, checkpoint_path: str):
     print(f"[LOAD] Base Model: {model_name}")
@@ -137,7 +124,7 @@ def main():
         print("\n" + "="*55)
         print(" FUMII TEST CASES INFERENCE")
         print("="*55)
-        for i, tc in enumerate(TEST_CASES, 1):
+        for i, tc in enumerate(EVAL_PROMPTS[:5], 1):
             print(f"\n[Case {i}] User: {tc}")
             response = generate_response(tc, model, tokenizer, is_gpt2)
             print(f"       Fumii: {response}")
