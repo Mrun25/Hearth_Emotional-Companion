@@ -33,7 +33,7 @@ Hearth is an emotionally intelligent AI companion featuring an **Agentic Self-Co
 Watch Hearth in action, demonstrating the Agentic Loop actively responding to an emotionally heavy prompt.
 
 <div align="center">
-  <img src="assets/hearth-demo.webp" alt="Hearth Product Demo" width="600" />
+  <img src="assets/hearth-demo-v2.webp" alt="Hearth Product Demo" width="600" />
 </div>
 
 ---
