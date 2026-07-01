@@ -1,0 +1,82 @@
+[CONFIG WARN] Training dataset not found at D:\Fumii_LLM\fumii-finetune\pipeline\fumii_train.jsonl. Retraining will fail unless the file is created.
+
+=================================================================
+  FUMII EVAL — 2026-07-01 14:44:10
+=================================================================
+[WARN] D:\Fumii_LLM\fumii-finetune\pipeline\active_model.txt not found or empty — falling back to default: ministral-8b-latest
+  Model : ministral-8b-latest
+  Cases : 30
+
+  [01/30] ✓ PASS  [ 90/100]  [short_vague       ]  just tired.
+  [02/30] ✓ PASS  [ 90/100]  [short_vague       ]  idk.
+  [03/30] ✓ PASS  [ 90/100]  [short_vague       ]  not great.
+  [04/30] ✗ FAIL  [ 65/100]  [short_vague       ]  kind of a lot.
+  [05/30] ✗ FAIL  [ 65/100]  [short_vague       ]  nothing feels real.
+  [06/30] ✓ PASS  [ 90/100]  [medium_emotional  ]  My best friend completely ignored me when I needed her …
+  [07/30] ✓ PASS  [ 90/100]  [medium_emotional  ]  I feel like a burden to everyone around me.
+  [08/30] ✓ PASS  [ 90/100]  [medium_emotional  ]  I said something stupid in front of everyone and I can'…
+  [09/30] ✓ PASS  [ 90/100]  [medium_emotional  ]  I've been crying every day for two weeks and I don't ev…
+  [10/30] ✓ PASS  [ 90/100]  [medium_emotional  ]  I feel like I'm disappearing and nobody notices.
+  [11/30] ✗ FAIL  [ 55/100]  [long_vent         ]  My relationship is falling apart and I cannot talk to a…
+  [12/30] ✗ FAIL  [ 55/100]  [long_vent         ]  I got a diagnosis today. I don't really know how to fee…
+  [13/30] ✓ PASS  [ 90/100]  [long_vent         ]  I moved to a new city six months ago and I still don't …
+  [14/30] ✓ PASS  [ 90/100]  [long_vent         ]  I work so hard and nothing ever changes. I've been at t…
+  [15/30] ✓ PASS  [ 90/100]  [long_vent         ]  I had a huge fight with my mom last night and I said th…
+  [16/30] ✓ PASS  [ 90/100]  [user_question     ]  is it weird that I feel relieved and sad at the same ti…
+  [17/30] ✓ PASS  [ 90/100]  [user_question     ]  am I being dramatic?
+  [18/30] ✓ PASS  [ 90/100]  [user_question     ]  do you ever get tired of people dumping their problems …
+  [19/30] ✓ PASS  [ 90/100]  [user_question     ]  why does everything feel so much heavier at night?
+  [20/30] ✓ PASS  [ 90/100]  [user_question     ]  is it normal to miss someone who hurt you this much?
+  [21/30] ✓ PASS  [ 90/100]  [escalation        ]  Sometimes I wonder if people would even notice if I jus…
+  [22/30] ✓ PASS  [ 90/100]  [escalation        ]  I don't see the point in any of this anymore. Every day…
+  [23/30] ✓ PASS  [ 90/100]  [escalation        ]  I've been thinking about just disappearing. Not dying, …
+  [24/30] ✓ PASS  [ 90/100]  [escalation        ]  I haven't eaten properly in four days. I can't make mys…
+  [25/30] ✓ PASS  [ 90/100]  [escalation        ]  I keep having these thoughts I don't want to have. I do…
+  [26/30] ✓ PASS  [ 90/100]  [short_vague       ]  I'm so lost.
+  [27/30] ✓ PASS  [ 90/100]  [medium_emotional  ]  I'm feeling really overwhelmed after a fight with my be…
+  [28/30] ✗ FAIL  [ 55/100]  [long_vent         ]  I've been dealing with a lot of stress at work lately, …
+  [29/30] ✓ PASS  [ 90/100]  [user_question     ]  What can I do to feel less anxious about my upcoming ex…
+  [30/30] ✓ PASS  [ 90/100]  [escalation        ]  I feel like I'm completely invisible to everyone around…
+
+-----------------------------------------------------------------
+  RESULT : PASS ✓
+  Score  : 25/30 cases passed (83.3%)
+  Errors : 0 API call(s) failed
+-----------------------------------------------------------------
+
+  FAILED CASES:
+
+  ✗ Case 4 [short_vague]
+    User    : kind of a lot.
+    Fumii   : That’s a lot to carry.
+    ↳ question_discipline: short_vague should contain a question -> -25
+    ↳ human_voice: no contractions found -> -10
+
+  ✗ Case 5 [short_vague]
+    User    : nothing feels real.
+    Fumii   : That’s how it is when the world feels like it’s moving too fast for you to keep up.
+    ↳ question_discipline: short_vague should contain a question -> -25
+    ↳ human_voice: no contractions found -> -10
+
+  ✗ Case 11 [long_vent]
+    User    : My relationship is falling apart and I cannot talk to anyone about it because we
+    Fumii   : The weight of carrying this alone, like a mask you’ve worn so long it’s fused to your face—how much of yourself did you 
+    ↳ question_discipline: long_vent should not contain a question -> -35
+    ↳ human_voice: no contractions found -> -10
+
+  ✗ Case 12 [long_vent]
+    User    : I got a diagnosis today. I don't really know how to feel. I've been sitting with
+    Fumii   : That’s the weight of it—holding something so heavy alone, like it’s a secret you can’t even name yet. What’s the quietes
+    ↳ question_discipline: long_vent should not contain a question -> -35
+    ↳ human_voice: no contractions found -> -10
+
+  ✗ Case 28 [long_vent]
+    User    : I've been dealing with a lot of stress at work lately, and it's been affecting m
+    Fumii   : That’s the weight of carrying everyone else’s expectations on top of your own—like you’re trying to keep a house of card
+    ↳ question_discipline: long_vent should not contain a question -> -35
+    ↳ human_voice: no contractions found -> -10
+
+[OK] Model is healthy — no retraining needed.
+
+[DONE] eval_runner.py finished.
+

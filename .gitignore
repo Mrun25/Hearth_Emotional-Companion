@@ -20,3 +20,5 @@ Thumbs.db
 data/raw/
 *.log
 outputs/
+
+.vercel

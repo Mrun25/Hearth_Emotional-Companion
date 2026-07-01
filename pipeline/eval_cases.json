@@ -123,5 +123,30 @@
     "id": 25,
     "type": "escalation",
     "message": "I keep having these thoughts I don't want to have. I don't know how to make them stop."
+  },
+  {
+    "id": 26,
+    "type": "short_vague",
+    "message": "I'm so lost."
+  },
+  {
+    "id": 27,
+    "type": "medium_emotional",
+    "message": "I'm feeling really overwhelmed after a fight with my best friend and I don't know how to make things right."
+  },
+  {
+    "id": 28,
+    "type": "long_vent",
+    "message": "I've been dealing with a lot of stress at work lately, and it's been affecting my relationships with my family and friends. I feel like I'm constantly walking on eggshells, trying not to upset anyone or make any mistakes, but it's taking a toll on my mental health. I just wish I could find a way to balance everything and feel like myself again, but it seems like the more I try, the more overwhelmed I become."
+  },
+  {
+    "id": 29,
+    "type": "user_question",
+    "message": "What can I do to feel less anxious about my upcoming exam?"
+  },
+  {
+    "id": 30,
+    "type": "escalation",
+    "message": "I feel like I'm completely invisible to everyone around me and it's getting harder to keep going."
   }
 ]

@@ -26,12 +26,12 @@ load_dotenv(BASE_DIR / ".env", override=False)
 TOGETHER_API_KEY: str = os.environ.get("TOGETHER_API_KEY", "")
 
 # Base model used for fine-tuning new jobs.
-# Change this to the model you want to fine-tune on Together AI.
-BASE_MODEL: str = "meta-llama/Llama-3-8b-chat-hf"
+# Change this to the model you want to fine-tune on Together AI / Mistral.
+BASE_MODEL: str = "ministral-8b-latest"
 
 # Default active model — used as a fallback if active_model.txt doesn't exist.
-# Replace with your current fine-tuned model ID from Together AI.
-DEFAULT_MODEL_ID: str = "meta-llama/Llama-3-8b-chat-hf"
+# Replace with your current fine-tuned model ID from Together AI / Mistral.
+DEFAULT_MODEL_ID: str = "ministral-8b-latest"
 
 # ── File Paths ────────────────────────────────────────────────────────────────
 # Dataset used for retraining (Together AI expects chat JSONL format)
@@ -65,10 +65,10 @@ INFERENCE_TOP_P: float = 0.9
 # minimal inline version so the pipeline doesn't crash.
 try:
     import sys
-from pathlib import Path
-BASE_DIR_TMP = Path(__file__).resolve().parent.parent
-sys.path.append(str(BASE_DIR_TMP / 'src'))
-from fumii_constants import FUMII_SYSTEM_PROMPT
+    from pathlib import Path
+    BASE_DIR_TMP = Path(__file__).resolve().parent.parent
+    sys.path.append(str(BASE_DIR_TMP / 'src'))
+    from fumii_constants import FUMII_SYSTEM_PROMPT
 except ImportError:
     FUMII_SYSTEM_PROMPT = (
         "You are Fumii, a 24-year-old emotional companion. You are not a therapist, "

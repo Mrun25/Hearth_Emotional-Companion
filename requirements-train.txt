@@ -1,0 +1,43 @@
+# ============================================================
+# Fumii Fine-Tuning Pipeline — Pinned Requirements
+# Python >= 3.10 recommended
+# Install: pip install -r requirements.txt
+# ============================================================
+
+# ── Web Server ───────────────────────────────────────────────
+flask==3.0.3
+flask-cors==4.0.1
+groq>=0.9.0
+mistralai>=1.0.0
+
+
+
+# ── Config & Utilities ──────────────────────────────────────
+pyyaml==6.0.1
+python-dotenv==1.0.1   # load env vars from .env
+tqdm==4.66.4
+
+# ── Core ML & Training ──────────────────────────────────────
+# (Only needed if running local fine-tuning / inference)
+torch==2.2.2
+transformers==4.40.2
+datasets==2.19.1
+tokenizers==0.19.1
+accelerate==0.30.1
+peft==0.11.1
+trl==0.8.6
+bitsandbytes==0.43.1   # 4-bit / 8-bit quantization (NF4)
+
+# ── Evaluation & Metrics ────────────────────────────────────
+evaluate==0.4.2
+rouge-score==0.1.2
+nltk==3.8.1
+
+# ── Data Handling ───────────────────────────────────────────
+pandas==2.2.2
+numpy==1.26.4
+scikit-learn==1.4.2    # train/val/test split utilities
+
+# ── Logging ─────────────────────────────────────────────────
+tensorboard==2.16.2
+huggingface-hub==0.23.0

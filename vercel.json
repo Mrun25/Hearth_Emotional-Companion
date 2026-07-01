@@ -1,0 +1,21 @@
+{
+    "name": "hearth",
+    "version": 2,
+    "builds": [
+        {
+            "src": "src/api.py",
+            "use": "@vercel/python"
+        }
+    ],
+    "routes": [
+        {
+            "src": "/api/(.*)",
+            "dest": "src/api.py"
+        },
+        {
+            "src": "/(.*)",
+            "dest": "src/api.py"
+        }
+    ],
+    "buildCommand": "python pipeline/eval_runner.py"
+}

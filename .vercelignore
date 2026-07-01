@@ -1,0 +1,12 @@
+data/
+outputs/
+.git/
+.github/
+.vscode/
+.idea/
+venv/
+env/
+.venv/
+__pycache__/
+*.pyc
+tests/

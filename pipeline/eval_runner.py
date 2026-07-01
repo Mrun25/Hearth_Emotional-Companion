@@ -65,35 +65,37 @@ def load_active_model() -> str:
     return config.DEFAULT_MODEL_ID
 
 
-# ── Together AI inference ──────────────────────────────────────────────────────
+# ── Mistral AI inference ──────────────────────────────────────────────────────
 
-def call_together(model_id: str, user_message: str) -> str:
+def call_mistral(model_id: str, user_message: str) -> str:
     """
-    Send a single user message to the active Fumii model on Together AI.
+    Send a single user message to the active Fumii model on Mistral.
     Returns the assistant's response text, or raises on error.
     """
     try:
-        from together import Together
+        from mistralai.client import Mistral
     except ImportError:
         raise RuntimeError(
-            "The 'together' package is not installed. "
-            "Run: pip install together"
+            "The 'mistralai' package is not installed. "
+            "Run: pip install mistralai"
         )
 
-    if not config.TOGETHER_API_KEY:
+    import os
+    mistral_key = os.environ.get("MISTRAL_API_KEY")
+    if not mistral_key:
         raise RuntimeError(
-            "TOGETHER_API_KEY is not set in .env. "
+            "MISTRAL_API_KEY is not set in .env. "
             "Please add it before running eval."
         )
 
-    client = Together(api_key=config.TOGETHER_API_KEY)
+    client = Mistral(api_key=mistral_key)
 
     messages = [
         {"role": "system",  "content": config.FUMII_SYSTEM_PROMPT},
         {"role": "user",    "content": user_message},
     ]
 
-    response = client.chat.completions.create(
+    response = client.chat.complete(
         model=model_id,
         messages=messages,
         temperature=config.INFERENCE_TEMPERATURE,
@@ -140,9 +142,9 @@ def run_evaluation() -> dict:
         msg_type  = case["type"]
         case_id   = case["id"]
 
-        # Call Together AI
+        # Call Mistral AI
         try:
-            response = call_together(model_id, user_msg)
+            response = call_mistral(model_id, user_message=user_msg)
         except Exception as e:
             err_msg = f"[ERROR] Case {case_id} — API call failed: {e}"
             _log(err_msg)
@@ -214,15 +216,15 @@ def run_evaluation() -> dict:
 
 def trigger_retrain() -> None:
     """
-    Spawn retrain_trigger.py as a subprocess so it can run its long polling
+    Spawn mistral_retrain_trigger.py as a subprocess so it can run its long polling
     loop without blocking the caller.  Output streams to the shared log.
     """
-    retrain_script = PIPELINE_DIR / "retrain_trigger.py"
+    retrain_script = PIPELINE_DIR / "mistral_retrain_trigger.py"
     if not retrain_script.exists():
-        _log(f"[ERROR] retrain_trigger.py not found at {retrain_script}")
+        _log(f"[ERROR] mistral_retrain_trigger.py not found at {retrain_script}")
         return
 
-    _log("\n[RETRAIN] Pass rate below threshold — launching retrain_trigger.py …")
+    _log("\n[RETRAIN] Pass rate below threshold — launching mistral_retrain_trigger.py …")
     try:
         # Run in the background; stdout/stderr go to the log file
         with open(config.LOG_FILE, "a", encoding="utf-8") as log_fh:
@@ -232,9 +234,9 @@ def trigger_retrain() -> None:
                 stderr=log_fh,
                 cwd=str(PIPELINE_DIR.parent),
             )
-        _log("[RETRAIN] retrain_trigger.py launched — check log for progress.")
+        _log("[RETRAIN] mistral_retrain_trigger.py launched — check log for progress.")
     except Exception as e:
-        _log(f"[ERROR] Failed to launch retrain_trigger.py: {e}")
+        _log(f"[ERROR] Failed to launch mistral_retrain_trigger.py: {e}")
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
