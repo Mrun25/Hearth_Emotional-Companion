@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="200" height="200">
+  <!-- Background -->
+  <rect width="400" height="400" rx="100" fill="#1A1A1A" />
+  
+  <!-- Outer Glow -->
+  <circle cx="200" cy="200" r="140" fill="url(#glowGradient)" opacity="0.4" />
+  
+  <!-- Inner Flame / Hearth Element -->
+  <path d="M200 80 C 120 180, 100 240, 150 290 C 180 320, 220 320, 250 290 C 300 240, 280 180, 200 80 Z" fill="url(#fireGradient)" />
+  <path d="M200 130 C 160 200, 150 240, 175 270 C 190 290, 210 290, 225 270 C 250 240, 240 200, 200 130 Z" fill="#FFD166" opacity="0.9" />
+
+  <!-- Defs for Gradients -->
+  <defs>
+    <radialGradient id="glowGradient" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#EF476F" stop-opacity="1" />
+      <stop offset="100%" stop-color="#1A1A1A" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="fireGradient" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#EF476F" />
+      <stop offset="60%" stop-color="#F78C6B" />
+      <stop offset="100%" stop-color="#FFD166" />
+    </linearGradient>
+  </defs>
+</svg>

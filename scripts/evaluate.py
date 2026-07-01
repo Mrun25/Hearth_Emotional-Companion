@@ -16,6 +16,10 @@ import os
 import json
 import argparse
 from pathlib import Path
+import sys
+from pathlib import Path
+BASE_DIR_TMP = Path(__file__).resolve().parent.parent
+sys.path.append(str(BASE_DIR_TMP / 'src'))
 from fumii_constants import FUMII_SYSTEM_PROMPT, score_response, EVAL_PROMPTS
 
 # ── Paths ─────────────────────────────────────────────────────────────────────

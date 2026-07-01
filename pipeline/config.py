@@ -64,7 +64,11 @@ INFERENCE_TOP_P: float = 0.9
 # If the import fails (e.g. running from outside the project), fall back to a
 # minimal inline version so the pipeline doesn't crash.
 try:
-    from fumii_constants import FUMII_SYSTEM_PROMPT
+    import sys
+from pathlib import Path
+BASE_DIR_TMP = Path(__file__).resolve().parent.parent
+sys.path.append(str(BASE_DIR_TMP / 'src'))
+from fumii_constants import FUMII_SYSTEM_PROMPT
 except ImportError:
     FUMII_SYSTEM_PROMPT = (
         "You are Fumii, a 24-year-old emotional companion. You are not a therapist, "

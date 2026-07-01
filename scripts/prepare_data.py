@@ -21,6 +21,10 @@ from pathlib import Path
 from collections import Counter
 
 # Import single source of truth for prompts and scoring
+import sys
+from pathlib import Path
+BASE_DIR_TMP = Path(__file__).resolve().parent.parent
+sys.path.append(str(BASE_DIR_TMP / 'src'))
 from fumii_constants import FUMII_SYSTEM_PROMPT, pre_filter, score_response, classify_message_type
 
 # ── Paths ────────────────────────────────────────────────────────────────────

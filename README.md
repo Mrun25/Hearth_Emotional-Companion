@@ -1,46 +1,73 @@
-# Hearth Companion Ecosystem
-
-> An emotionally intelligent AI companion designed to provide grounded, non-clinical support. Featuring an **Agentic Self-Correction Loop**, lightning-fast inference via Groq, and a modern glassmorphic web interface.
-
----
-
-## 🌟 What is Hearth?
-
-Hearth (formerly Fumii) is an experimental LLM companion that breaks away from the typical "helpful AI assistant" persona. It is not a therapist, and it doesn't give advice or bullet points. It is designed to act like a person listening to you at 11pm when something is heavy on your chest — responding with extreme brevity, deep curiosity, and natural empathy.
-
-## ✨ Core Features
-
-- **Agentic Self-Correction**: The backend runs an internal "Draft -> Critic -> Refine" loop. An independent QA Critic evaluates Hearth's drafts against strict empathetic rules (no advice, extreme brevity, no psychoanalyzing) and forces rewrites until the response is perfectly humanized.
-- **Modern Web UI**: A beautiful, premium chat interface featuring dark/light modes, micro-animations, and a calming glassmorphism aesthetic.
-- **Fast Inference**: Powered by Groq (`llama-3.3-70b-versatile`) for instant, real-time responses.
-- **Crisis Detection**: A parallel DistilBERT crisis classifier monitors for distress signals to ensure safe interactions.
+<div align="center">
+  <img src="hearth-logo.svg" alt="Hearth Companion Logo" width="200" />
+  <h1>Hearth Companion</h1>
+  <p><b>An emotionally intelligent AI companion designed to provide grounded, non-clinical support.</b></p>
+  
+  <p>
+    <a href="https://github.com/Mrun25/Hearth_Emotional-Companion/actions"><img src="https://img.shields.io/github/actions/workflow/status/Mrun25/Hearth_Emotional-Companion/main.yml?branch=main" alt="Build Status"></a>
+    <a href="https://github.com/Mrun25/Hearth_Emotional-Companion"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python Version"></a>
+    <a href="https://github.com/Mrun25/Hearth_Emotional-Companion/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
+  </p>
+</div>
 
 ---
 
-## 📁 Project Structure
+## 📖 Overview
 
-Following standard Python project architecture:
+Hearth is an emotionally intelligent AI companion featuring an **Agentic Self-Correction Loop**, lightning-fast inference via Groq, and a modern glassmorphic web interface. It acts as a grounded conversational companion, ensuring it doesn't give unwanted advice or psychoanalyze the user.
+
+---
+
+## ✨ Features
+
+- **Agentic Self-Correction (Internal Monologue)**: The backend runs an internal "Draft -> Critic -> Refine" loop. An independent QA Critic evaluates Fumii's drafts against strict empathetic rules and forces rewrites until the response is perfect.
+- **Crisis Detection**: Parallel DistilBERT crisis classifier monitors for distress signals without baking it into the LLM logic.
+- **Modern Web UI**: A beautiful, premium chat interface (`hearth_chat_interface.html`) featuring dark/light modes, micro-animations, and glassmorphism.
+- **In-Context Fine-Tuning**: Highly optimized system prompts that override the base model's "helpful assistant" persona.
+- **Fast Inference**: Powered by Groq (`llama-3.3-70b-versatile`) for instant responses.
+
+---
+
+## 🎥 Product Demo
+
+Watch Hearth in action, demonstrating the Agentic Loop actively responding to an emotionally heavy prompt.
+
+<div align="center">
+  <img src="assets/hearth-demo.webp" alt="Hearth Product Demo" width="600" />
+</div>
+
+---
+
+## 🛠 Repository Architecture
+
+The project follows a standard Python project architecture, cleanly separating core components, utilities, and assets.
 
 ```text
 Hearth/
-├── src/
+├── assets/                    # Project logos, diagrams, and demo recordings
+├── src/                       # Application code
 │   ├── api.py                 # Flask backend running the Agentic Evaluator Loop + UI serving
-│   └── pipeline/              # Model scoring and evaluation pipelines
-├── frontend/
+│   ├── inference.py           # Core model inference logic
+│   ├── crisis_classifier.py   # DistilBERT crisis detector module
+│   └── fumii_constants.py     # Prompt templates and global rules
+├── frontend/                  
 │   └── hearth_chat_interface.html # The modern frontend chat interface
-├── scripts/                   
-│   ├── fetch_responses.py     # Script to test response generation
-│   ├── mistral_api_finetune.py# Cloud fine-tuning via Mistral API
-│   ├── prepare_data.py        # Data cleaning + split generation
-│   ├── train.py               # Local LoRA fine-tuning (SFTTrainer)
-│   └── crisis_classifier.py   # DistilBERT crisis detector
-├── tests/                     # Test cases and runner scripts
-├── docs/                      # Documentation and Agent Skills
+├── scripts/                   # Utilities, training, and data preparation
+│   ├── fetch_responses.py     
+│   ├── mistral_api_finetune.py
+│   ├── prepare_data.py        
+│   └── train.py               
+├── pipeline/                  # Model evaluation pipeline (scorer, config)
+├── tests/                     # Pytest suite
+├── docs/                      # Agent Skills and Architecture documentation
+│   └── ARCHITECTURE.md        # System flow diagrams and component logic
 ├── data/                      # Raw and processed datasets
 ├── configs/                   # Hyperparameters (LoRA + training)
 ├── .env.example               # Environment template (API Keys)
 └── requirements.txt
 ```
+
+For more detailed diagrams on how Hearth works under the hood, see [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
@@ -96,4 +123,6 @@ If you want to bake the persona permanently into weights rather than relying ent
 
 ---
 
-*Hearth — Be curious. Be present. Be real.*
+<div align="center">
+  <i>Hearth — Be curious. Be present. Be real.</i>
+</div>
