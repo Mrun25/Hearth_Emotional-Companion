@@ -142,9 +142,6 @@ def health():
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
-    if os.environ.get("VERCEL") == "1":
-        return jsonify({"response": "BYOK"})
-
     if groq_client is None:
         return jsonify({"error": "GROQ_API_KEY is missing."}), 500
 
