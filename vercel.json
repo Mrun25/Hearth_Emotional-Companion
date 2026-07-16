@@ -1,5 +1,4 @@
 {
-    "name": "hearth",
     "version": 2,
     "builds": [
         {
@@ -16,6 +15,5 @@
             "src": "/(.*)",
             "dest": "src/api.py"
         }
-    ],
-    "buildCommand": "python pipeline/eval_runner.py"
+    ]
 }
