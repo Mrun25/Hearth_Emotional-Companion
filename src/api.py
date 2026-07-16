@@ -14,7 +14,7 @@ import json
 import argparse
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
-from mistralai import Mistral
+from mistralai.client import Mistral
 from dotenv import load_dotenv
 from pathlib import Path
 
