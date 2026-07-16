@@ -1,26 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-api.py -- API Server with Groq LLM Connection
+api.py -- API Server with Mistral LLM
 =============================================================
 Backend serving the /api/chat endpoint to connect the frontend to the Fumii LLM.
 
 Usage:
-    python scripts/api.py
-    python scripts/api.py --port 5000
+    python src/api.py
+    python src/api.py --port 5000
 """
 
 import os
+import json
 import argparse
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
-from groq import Groq
+from mistralai import Mistral
 from dotenv import load_dotenv
 from pathlib import Path
-
-try:
-    from mistralai.client import Mistral
-except ImportError:
-    Mistral = None
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env", override=False)
@@ -28,11 +24,12 @@ load_dotenv(BASE_DIR / ".env", override=False)
 app = Flask(__name__)
 CORS(app)
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
-
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
-mistral_client = Mistral(api_key=MISTRAL_API_KEY) if (Mistral and MISTRAL_API_KEY) else None
+mistral_client = Mistral(api_key=MISTRAL_API_KEY) if MISTRAL_API_KEY else None
+
+# Models
+DRAFT_MODEL = "mistral-large-latest"   # drafter — best quality
+CRITIC_MODEL = "mistral-small-latest"  # critic  — fast + cheap for JSON eval
 
 def get_active_model():
     active_model_path = BASE_DIR / "pipeline" / "active_model.txt"
@@ -137,16 +134,16 @@ def health():
     """Quick liveness check."""
     return jsonify({
         "status": "ok",
-        "llm_connected": groq_client is not None
+        "llm_connected": mistral_client is not None
     })
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
-    if groq_client is None:
-        return jsonify({"error": "GROQ_API_KEY is missing."}), 500
+    if mistral_client is None:
+        return jsonify({"error": "MISTRAL_API_KEY is missing."}), 500
 
     data = request.json
-    
+
     # Extract message history sent from the frontend
     history = data.get("messages", [])
     if not history:
@@ -163,64 +160,55 @@ def chat():
     try:
         # Prepend the system prompt to the conversation history
         messages = [{"role": "system", "content": FUMII_SYSTEM_PROMPT}] + history
-        
+
         max_attempts = 3
         final_response = ""
-        
+
         print("\n" + "-"*50)
         print(f"USER: {latest_user_message}")
         print("-"*50)
-        
+
         for attempt in range(max_attempts):
             print(f"\n[Attempt {attempt+1}] Drafting response...")
-            
-            # 1. Draft
+
+            # 1. Draft — use fine-tuned model if available, else mistral-large-latest
             active_model = get_active_model()
-            if mistral_client and active_model:
-                print(f"  [DRAFTING WITH MISTRAL MODEL: {active_model}]")
-                completion = mistral_client.chat.complete(
-                    model=active_model,
-                    messages=messages,
-                    temperature=0.75,
-                    max_tokens=150
-                )
-                draft = completion.choices[0].message.content.strip()
-            else:
-                print("  [DRAFTING WITH GROQ FALLBACK]")
-                completion = groq_client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=messages,
-                    temperature=0.75,
-                    max_tokens=150
-                )
-                draft = completion.choices[0].message.content.strip()
+            draft_model = active_model if active_model else DRAFT_MODEL
+            print(f"  [DRAFTING WITH: {draft_model}]")
+            completion = mistral_client.chat.complete(
+                model=draft_model,
+                messages=messages,
+                temperature=0.75,
+                max_tokens=150
+            )
+            draft = completion.choices[0].message.content.strip()
             print(f"  DRAFT: {draft}")
-            
+
             # Format the last 4 messages for the Critic so it has context
             recent_context = ""
             for msg in history[-4:]:
                 role_label = "USER" if msg["role"] == "user" else "HEARTH"
                 recent_context += f"{role_label}: {msg['content']}\n"
 
-            # 2. Evaluate
-            eval_completion = groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+            # 2. Evaluate — use mistral-small-latest (fast + cheap for JSON)
+            eval_completion = mistral_client.chat.complete(
+                model=CRITIC_MODEL,
                 messages=[
                     {"role": "system", "content": CRITIC_SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Recent Conversation Context:\n{recent_context}\n\nHearth's Drafted Response: '{draft}'\n\nEvaluate the draft. Output JSON."}
+                    {"role": "user", "content": f"Recent Conversation Context:\n{recent_context}\n\nHearth's Drafted Response: '{draft}'\n\nEvaluate the draft. Output JSON only."}
                 ],
-                response_format={"type": "json_object"},
-                temperature=0.1
+                temperature=0.1,
+                max_tokens=200,
+                response_format={"type": "json_object"}
             )
-            
-            import json
+
             try:
                 eval_result = json.loads(eval_completion.choices[0].message.content.strip())
-            except Exception as e:
+            except Exception:
                 eval_result = {"pass": True, "feedback": "JSON parse error, defaulting to pass."}
-                
+
             print(f"  CRITIC: pass={eval_result.get('pass')} | feedback={eval_result.get('feedback', '')}")
-            
+
             # 3. Check pass/fail
             if eval_result.get("pass") is True:
                 final_response = draft
@@ -232,8 +220,8 @@ def chat():
                 # Inject feedback for next iteration
                 messages.append({"role": "assistant", "content": draft})
                 messages.append({"role": "user", "content": f"CRITIC FEEDBACK: You failed the rules. {feedback}. Rewrite your response to fix this."})
-                final_response = draft # Fallback if we hit max attempts and still fail
-                
+                final_response = draft  # Fallback if we hit max attempts and still fail
+
         return jsonify({"response": final_response})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -246,10 +234,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print("=" * 55)
-    print("  Fumii API Server (Groq LLM)")
+    print("  Fumii API Server (Mistral LLM)")
     print("=" * 55)
-    print(f"  Serving at    : http://{args.host}:{args.port}/")
-    print(f"  Groq API Key  : {'Configured' if groq_client else 'MISSING'}")
+    print(f"  Serving at       : http://{args.host}:{args.port}/")
+    print(f"  Mistral API Key  : {'Configured' if mistral_client else 'MISSING'}")
+    print(f"  Draft Model      : {DRAFT_MODEL}")
+    print(f"  Critic Model     : {CRITIC_MODEL}")
     print("=" * 55)
 
     app.run(host=args.host, port=args.port, debug=args.debug)
