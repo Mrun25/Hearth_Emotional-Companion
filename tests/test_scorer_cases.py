@@ -11,6 +11,15 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 
 from pipeline.scorer import score_response
 
+# Gated expectations for cases whose intent is unambiguous from their name.
+# Cases 4 and 5 stay informational: their names describe scorer behaviour
+# (borderline thresholds) rather than a clear pass/fail contract.
+GATED = {
+    "Test 1: Perfect medium_emotional": True,
+    "Test 2: Failed short_vague (No question and no contractions)": False,
+    "Test 3: Formulaic medium_emotional (Acknowledge -> Elaborate -> Question)": False,
+}
+
 def run_test_cases():
     test_cases = [
         {
@@ -43,6 +52,7 @@ def run_test_cases():
     print("Running Generated Test Cases against Fumii Scorer")
     print("="*60)
 
+    failures = []
     for tc in test_cases:
         print(f"[{tc['name']}]")
         print(f"Type: {tc['type']}")
@@ -58,7 +68,24 @@ def run_test_cases():
             print("Failure Reasons:")
             for failure in result['failures']:
                 print(f"  - {failure}")
+
+        expected = GATED.get(tc['name'])
+        if expected is not None and result['passed'] != expected:
+            failures.append(
+                f"{tc['name']}: expected {'PASS' if expected else 'FAIL'}, "
+                f"got {'PASS' if result['passed'] else 'FAIL'} ({result['score']}/100)"
+            )
+            print(f"  ⛔ Gated expectation unmet: {failures[-1]}")
         print("="*60)
+
+    gated = len(GATED)
+    unmet = len(failures)
+    print(f"Gated expectations: {gated - unmet}/{gated} met")
+    if failures:
+        print("Unmet gated expectations:")
+        for f in failures:
+            print(f"  - {f}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     run_test_cases()
